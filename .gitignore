@@ -42,4 +42,7 @@ next-env.d.ts
 
 # User Data & Storage
 database.sqlite
+database.sqlite-wal
+database.sqlite-shm
 public/uploads/
+/dist
