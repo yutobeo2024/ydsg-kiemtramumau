@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Shield, AlertTriangle } from "lucide-react";
+import { Home, Shield, AlertTriangle, Settings } from "lucide-react";
 
 export default function Header() {
   const pathname = usePathname();
@@ -48,6 +48,14 @@ export default function Header() {
           >
             <AlertTriangle size={18} />
             <span className="hidden sm:inline">Cảnh Báo</span>
+          </Link>
+
+          <Link 
+            href="/config" 
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all ${pathname === '/config' ? 'bg-purple-100/60 text-purple-700 shadow-sm' : 'text-slate-600 hover:bg-slate-200/50'}`}
+          >
+            <Settings size={18} />
+            <span className="hidden sm:inline">Cấu Hình</span>
           </Link>
         </nav>
         

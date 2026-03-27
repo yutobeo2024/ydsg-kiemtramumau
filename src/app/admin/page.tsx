@@ -106,6 +106,23 @@ export default function AdminDashboard() {
     }));
   }, [dbData, searchTerm, fromDate, toDate]);
 
+  // Detect duplicate CCCD or ticketId (khách hàng làm lại bài)
+  const duplicateKeys = useMemo(() => {
+    const cccdCount: Record<string, number> = {};
+    const ticketCount: Record<string, number> = {};
+    dbData.forEach(t => {
+      if (t.cccd) cccdCount[t.cccd] = (cccdCount[t.cccd] || 0) + 1;
+      if (t.ticketId) ticketCount[t.ticketId] = (ticketCount[t.ticketId] || 0) + 1;
+    });
+    const dups = new Set<number>();
+    dbData.forEach(t => {
+      if ((t.cccd && cccdCount[t.cccd] > 1) || (t.ticketId && ticketCount[t.ticketId] > 1)) {
+        dups.add(t.id);
+      }
+    });
+    return dups;
+  }, [dbData]);
+
   return (
     <main className="min-h-screen p-4 md:p-8 lg:p-12 bg-slate-50">
       {/* Header */}
@@ -235,9 +252,22 @@ export default function AdminDashboard() {
                             </tr>
                           </thead>
                           <tbody>
-                            {paginatedTests.map(test => (
-                              <tr key={test.id} className="border-t border-slate-100/50 hover:bg-white/40 transition-colors">
-                                <td className="py-3 px-6 text-slate-500 font-mono text-sm">{test.timeStr}</td>
+                            {paginatedTests.map(test => {
+                              const isDuplicate = duplicateKeys.has(test.id);
+                              return (
+                              <tr key={test.id} className={`border-t border-slate-100/50 transition-colors ${
+                                isDuplicate
+                                  ? 'bg-red-50/80 hover:bg-red-100/80'
+                                  : 'hover:bg-white/40'
+                              }`}>
+                                <td className="py-3 px-6 text-slate-500 font-mono text-sm">
+                                  {isDuplicate && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full mb-1">
+                                      ⚠ Làm lại
+                                    </span>
+                                  )}
+                                  <div>{test.timeStr}</div>
+                                </td>
                                 <td className="py-3 px-6 text-slate-500 font-mono text-sm">{test.startTime}</td>
                                 <td className="py-3 px-6 text-slate-500 font-mono text-sm">{test.examDate}</td>
                                 <td className="py-3 px-6 text-slate-500 font-mono text-sm">{test.ticketId}</td>
@@ -274,7 +304,9 @@ export default function AdminDashboard() {
                                   </div>
                                 </td>
                               </tr>
-                            ))}
+                              );
+                            })}
+
                           </tbody>
                         </table>
                       </div>

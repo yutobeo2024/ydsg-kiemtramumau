@@ -25,6 +25,9 @@ export default function AlertsDashboard() {
                  id: row.id,
                  ticketId: row.ticketId,
                  fullName: row.fullName,
+                 cccd: row.cccd || '',
+                 examDate: row.examDate || '',
+                 startTime: row.startTime ? new Date(row.startTime).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '',
                  score: row.score,
                  passed: false,
                  videoUrl: row.videoUrl,
@@ -216,20 +219,24 @@ export default function AlertsDashboard() {
                         <table className="w-full text-left border-collapse">
                           <thead>
                             <tr className="bg-red-50/50">
-                              <th className="py-3 px-6 font-semibold text-slate-600 text-sm">Thời Gian</th>
-                              <th className="py-3 px-6 font-semibold text-slate-600 text-sm">ID Phiếu</th>
-                              <th className="py-3 px-6 font-semibold text-slate-600 text-sm">Họ và Tên</th>
-                              <th className="py-3 px-6 font-semibold text-slate-600 text-sm text-center">Mức Độ</th>
-                              <th className="py-3 px-6 font-semibold text-slate-600 text-sm text-right">Theo Dõi Lại</th>
+                              <th className="py-3 px-4 font-semibold text-slate-600 text-sm">Thời Gian</th>
+                              <th className="py-3 px-4 font-semibold text-slate-600 text-sm">Bắt Đầu (TG Khám)</th>
+                              <th className="py-3 px-4 font-semibold text-slate-600 text-sm">Ngày Khám (QR)</th>
+                              <th className="py-3 px-4 font-semibold text-slate-600 text-sm">ID Phiếu</th>
+                              <th className="py-3 px-4 font-semibold text-slate-600 text-sm">Họ và Tên</th>
+                              <th className="py-3 px-4 font-semibold text-slate-600 text-sm text-center">Mức Độ</th>
+                              <th className="py-3 px-4 font-semibold text-slate-600 text-sm text-right">Theo Dõi Lại</th>
                             </tr>
                           </thead>
                           <tbody>
                             {paginatedTests.map(test => (
                               <tr key={test.id} className="border-t border-red-50 hover:bg-red-50/60 transition-colors">
-                                <td className="py-3 px-6 text-slate-500 font-mono text-sm">{test.timeStr}</td>
-                                <td className="py-3 px-6 text-slate-500 font-mono text-sm">{test.ticketId}</td>
-                                <td className="py-3 px-6 font-bold text-slate-800">{test.fullName}</td>
-                                <td className="py-3 px-6 text-center">
+                                <td className="py-3 px-4 text-slate-500 font-mono text-sm">{test.timeStr}</td>
+                                <td className="py-3 px-4 text-slate-500 font-mono text-sm">{test.startTime}</td>
+                                <td className="py-3 px-4 text-slate-500 font-mono text-sm">{test.examDate}</td>
+                                <td className="py-3 px-4 text-slate-500 font-mono text-sm">{test.ticketId}</td>
+                                <td className="py-3 px-4 font-bold text-slate-800">{test.fullName}</td>
+                                <td className="py-3 px-4 text-center">
                                   <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 shadow-sm border border-red-200">
                                     Nghiêm trọng: {test.score} / 8
                                   </span>

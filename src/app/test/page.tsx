@@ -3,15 +3,15 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { getRandomQuestions, Question } from "@/data/questions";
-import { AlertTriangle, CheckCircle, VideoOff, Home } from "lucide-react";
+import { AlertTriangle, CheckCircle, VideoOff, Home, RotateCcw, X } from "lucide-react";
 import Image from "next/image";
 
 export default function TestPage() {
   const router = useRouter();
-  const [questions, setQuestions] = useState<Question[]>([]);
+  const [questions, setQuestions] = useState<{ id: number; image: string; options: string[]; correct: string }[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [score, setScore] = useState(0);
+  const [numInput, setNumInput] = useState(""); // bàn phím ảo
   const [isFinished, setIsFinished] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
@@ -27,8 +27,11 @@ export default function TestPage() {
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
 
   useEffect(() => {
-    // Tự động sinh ra 8 câu hỏi
-    setQuestions(getRandomQuestions(8));
+    // Fetch câu hỏi từ DB (theo cấu hình admin)
+    fetch('/api/questions')
+      .then(r => r.json())
+      .then(d => { if (d.success) setQuestions(d.data); })
+      .catch(console.error);
 
     return () => {
       stopRecordingLocally();
@@ -138,14 +141,41 @@ export default function TestPage() {
   };
 
   const handleAnswer = (option: string) => {
-    const isCorrect = option === questions[currentIndex].correct;
+    const isCorrect = option.trim() === questions[currentIndex].correct.trim();
     if (isCorrect) setScore(prev => prev + 1);
-
+    setNumInput("");
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(prev => prev + 1);
     } else {
       stopRecordingLocally();
       setIsFinished(true);
+    }
+  };
+
+  const handleRetake = async () => {
+    setIsFinished(false);
+    setIsStarted(false);
+    setScore(0);
+    setCurrentIndex(0);
+    setNumInput("");
+    setVideoBlobUrl(null);
+    setVideoBlob(null);
+    setUploadError("");
+    setIsRecording(false);
+    setWebcamStream(null);
+    chunksRef.current = [];
+    mediaRecorderRef.current = null;
+    // Fetch bộ câu hỏi mới từ API
+    try {
+      const r = await fetch('/api/questions');
+      const d = await r.json();
+      if (d.success) setQuestions(d.data);
+    } catch { /* giữ nguyên bộ cũ nếu lỗi mạng */ }
+    // Cập nhật startTime mới
+    const patientInfoStr = sessionStorage.getItem("patientInfo");
+    if (patientInfoStr) {
+      const info = JSON.parse(patientInfoStr);
+      sessionStorage.setItem("patientInfo", JSON.stringify({ ...info, startTime: new Date().toISOString() }));
     }
   };
 
@@ -194,7 +224,8 @@ export default function TestPage() {
   }
 
   if (isFinished) {
-    const passed = score >= 4;
+    const total = questions.length;
+    const passed = score >= Math.ceil(total / 2);
     return (
       <main className="min-h-screen flex items-center justify-center p-4">
         <motion.div 
@@ -217,7 +248,7 @@ export default function TestPage() {
           <p className="text-slate-500 mb-6">Hồ sơ đã được lưu trữ an toàn</p>
 
           <div className="text-5xl font-black mb-2 text-slate-800">
-            {score} <span className="text-2xl text-slate-400">/ 8</span>
+            {score} <span className="text-2xl text-slate-400">/ {questions.length}</span>
           </div>
           
           <div className={`text-lg font-semibold mb-6 ${passed ? 'text-emerald-500' : 'text-red-500'}`}>
@@ -246,6 +277,16 @@ export default function TestPage() {
             </div>
           )}
 
+          {/* Nút Làm Lại */}
+          <button
+            onClick={handleRetake}
+            disabled={isUploading}
+            className="w-full mb-3 flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-4 px-6 rounded-xl shadow-lg shadow-amber-500/30 transition-all duration-300 transform hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
+          >
+            <RotateCcw size={20} />
+            <span>Làm Lại Bài Kiểm Tra</span>
+          </button>
+
           <button 
             onClick={() => router.push("/")}
             className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-medium py-4 px-6 rounded-xl transition-all duration-300"
@@ -262,9 +303,9 @@ export default function TestPage() {
   const question = questions[currentIndex];
 
   return (
-    <main className="min-h-screen py-10 px-4 flex flex-col items-center justify-center relative">
+    <main className="min-h-screen py-6 px-4 flex flex-col items-center justify-center relative">
       
-      {/* Webcam overlay to be captured by display media */}
+      {/* Webcam overlay */}
       <div className="fixed top-2 right-2 md:top-4 md:right-4 z-50 w-28 md:w-48 aspect-video bg-black rounded-lg md:rounded-xl overflow-hidden shadow-2xl border-2 md:border-4 border-white/50 backdrop-blur-md">
         <video 
           ref={videoRef} 
@@ -280,19 +321,36 @@ export default function TestPage() {
         </div>
       </div>
 
-      <div className="w-full max-w-3xl glass rounded-3xl p-5 md:p-8 relative mt-24 md:mt-0">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 gap-4 sm:gap-0">
-          <div className="text-slate-500 font-medium">Câu hỏi {currentIndex + 1} / 8</div>
-          <div className="flex gap-1 w-full sm:w-auto h-2 sm:h-auto">
-            {questions.map((_, idx) => (
-               <div key={idx} className={`h-2 rounded-full transition-all ${idx === currentIndex ? 'bg-blue-500 flex-1 sm:w-12' : idx < currentIndex ? 'bg-emerald-400 flex-1 sm:w-10' : 'bg-slate-200 flex-1 sm:w-10'}`} />
-            ))}
+      <div className="w-full max-w-5xl glass rounded-3xl p-5 md:p-8 relative mt-24 md:mt-0">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 sm:gap-0">
+          <div className="text-slate-500 font-medium text-lg">Câu hỏi {currentIndex + 1} / {questions.length}</div>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="flex gap-1.5 flex-1 sm:flex-none h-2.5 sm:h-auto">
+              {questions.map((_, idx) => (
+                 <div key={idx} className={`h-2.5 rounded-full transition-all ${idx === currentIndex ? 'bg-blue-500 flex-1 sm:w-14' : idx < currentIndex ? 'bg-emerald-400 flex-1 sm:w-12' : 'bg-slate-200 flex-1 sm:w-12'}`} />
+              ))}
+            </div>
+            {/* Nút huỷ bài */}
+            <button
+              onClick={() => {
+                if (window.confirm('Huỷ bài kiểm tra và quay về trang chủ?')) {
+                  stopRecordingLocally();
+                  router.push('/');
+                }
+              }}
+              className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 border border-slate-200 hover:border-red-200 px-3 py-2 rounded-xl transition-all duration-200"
+              title="Huỷ bài kiểm tra"
+            >
+              <X size={14} />
+              <span className="hidden sm:inline">Huỷ bài</span>
+            </button>
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-6 md:gap-10 items-center">
+        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-center">
           
-          <div className="flex-1 w-full bg-white rounded-2xl p-2 md:p-4 shadow-sm border border-slate-100 aspect-square relative flex items-center justify-center">
+          {/* Image - Lớn hơn */}
+          <div className="flex-[3] w-full bg-white rounded-2xl p-3 shadow-sm border border-slate-100 aspect-square relative flex items-center justify-center min-h-[300px] lg:min-h-[572px]">
             <AnimatePresence mode="wait">
               <motion.div
                 key={question.id}
@@ -300,35 +358,70 @@ export default function TestPage() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 1.1 }}
                 transition={{ duration: 0.3 }}
-                className="relative w-full h-full max-w-[350px] max-h-[350px]"
+                className="relative w-full h-full"
+                style={{ maxWidth: '624px', maxHeight: '624px', margin: '0 auto' }}
               >
                 <Image 
                   src={question.image} 
                   alt="Ishihara Test Plate" 
                   fill
                   className="object-contain"
-                  sizes="(max-width: 768px) 100vw, 350px"
+                  sizes="(max-width: 1024px) 100vw, 624px"
                   priority
                 />
               </motion.div>
             </AnimatePresence>
           </div>
 
-          <div className="flex-1 w-full flex flex-col justify-center gap-4">
-            <h3 className="text-xl font-semibold text-slate-800 mb-2">Bạn nhìn thấy gì trong hình?</h3>
-            
-            {question.options.map((opt, idx) => (
+          {/* Answers: bàn phím ảo + nút không thấy số */}
+          <div className="flex-[2] w-full flex flex-col justify-center gap-4">
+            <h3 className="text-lg font-semibold text-slate-800 mb-1">Bạn nhìn thấy gì trong hình?</h3>
+
+            {/* Hiển thị số đã nhập */}
+            <div className="relative flex items-center bg-white border-2 border-slate-200 rounded-2xl px-5 py-4 min-h-[64px]">
+              <span className="text-3xl font-bold tracking-widest text-blue-600 flex-1">
+                {numInput || <span className="text-slate-300 text-xl font-normal">Nhập số bạn nhìn thấy...</span>}
+              </span>
+              {numInput && (
+                <button
+                  onClick={() => setNumInput(prev => prev.slice(0, -1))}
+                  className="ml-2 p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 transition-colors font-mono text-sm"
+                >
+                  ←
+                </button>
+              )}
+            </div>
+
+            {/* Bàn phím ảo: 1-9 (không có 0) */}
+            <div className="grid grid-cols-3 gap-2">
+              {[1,2,3,4,5,6,7,8,9].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setNumInput(prev => prev + n)}
+                  className="bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-400 active:scale-95 font-bold text-2xl text-slate-700 hover:text-blue-600 py-4 rounded-xl transition-all duration-150 shadow-sm"
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+
+            {/* Nút Xác nhận số */}
+            {numInput && (
               <button
-                key={idx}
-                onClick={() => handleAnswer(opt)}
-                className="group relative w-full text-left bg-white/50 hover:bg-white border border-slate-200 hover:border-blue-400 p-4 md:p-5 rounded-xl transition-all duration-300 transform md:hover:-translate-y-1 hover:shadow-md active:scale-[0.98]"
+                onClick={() => handleAnswer(numInput)}
+                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-500/20 transition-all duration-200 active:scale-[0.98] text-lg"
               >
-                <span className="font-medium text-slate-700 group-hover:text-blue-600 transition-colors text-base md:text-lg">
-                  {opt}
-                </span>
-                <div className="absolute left-0 top-0 bottom-0 w-0 bg-blue-500/10 rounded-xl group-hover:w-full transition-all duration-500 ease-out" />
+                Xác nhận: &ldquo;{numInput}&rdquo;
               </button>
-            ))}
+            )}
+
+            {/* Nút Không thấy số */}
+            <button
+              onClick={() => handleAnswer('Không thấy số')}
+              className="w-full bg-slate-800 hover:bg-slate-700 active:scale-[0.98] text-white font-semibold py-4 rounded-xl transition-all duration-200"
+            >
+              🚫 Không thấy số nào
+            </button>
           </div>
 
         </div>
