@@ -32,7 +32,7 @@ export async function POST(req: Request) {
 
     await fs.writeFile(filePath, buffer);
 
-    const videoUrl = `/uploads/videos/${safeFilename}`;
+    const videoUrl = `/api/videos/${safeFilename}`;
 
     // 2. Chèn thông tin vào Database SQLite
     const stmt = db.prepare(`
