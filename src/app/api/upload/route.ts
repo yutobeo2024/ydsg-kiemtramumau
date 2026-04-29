@@ -21,9 +21,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Không tìm thấy File Video đính kèm' }, { status: 400 });
     }
 
-    // 1. Lưu file Video vào ổ đĩa ảo VPS (mình đưa vào public/uploads)
+    // 1. Lưu file Video. Mặc định trong public/uploads/videos.
+    // Trên VPS, set VIDEO_DIR=/var/lib/ydsg/videos và symlink vào public/uploads/videos.
     const buffer = Buffer.from(await file.arrayBuffer());
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'videos');
+    const uploadDir = process.env.VIDEO_DIR || path.join(process.cwd(), 'public', 'uploads', 'videos');
     await fs.mkdir(uploadDir, { recursive: true });
 
     const safeFilename = `${ticketId.replace(/[\/\\:*?"<>|]/g, '_')}-${Date.now()}.webm`;

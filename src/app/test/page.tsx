@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle, VideoOff, Home, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, CheckCircle, Home, RotateCcw, X, ScreenShare, Loader2 } from "lucide-react";
 import Image from "next/image";
 
 export default function TestPage() {
@@ -15,9 +15,12 @@ export default function TestPage() {
   const [isFinished, setIsFinished] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
+  const [isPrepared, setIsPrepared] = useState(false);
+  const [isPreparing, setIsPreparing] = useState(false);
   const [permissionError, setPermissionError] = useState("");
-  
+
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null);
@@ -25,6 +28,7 @@ export default function TestPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
+  const [displayStream, setDisplayStream] = useState<MediaStream | null>(null);
 
   useEffect(() => {
     // Fetch câu hỏi từ DB (theo cấu hình admin)
@@ -38,52 +42,66 @@ export default function TestPage() {
     };
   }, []);
 
-  const startRecording = async () => {
+  // Bước 1 (nhân viên): chỉ xin quyền và lưu stream, KHÔNG ghi
+  const prepareStreams = async () => {
+    if (isPreparing) return;
+    setIsPreparing(true);
     try {
-      // Xin quyền camera và web screen
       const userMedia = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       setWebcamStream(userMedia);
-      
-      const displayMedia = await navigator.mediaDevices.getDisplayMedia({ 
-        video: { displaySurface: "browser" }, 
-        audio: false, 
-        preferCurrentTab: true 
+
+      const displayMedia = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: "browser" },
+        audio: false,
+        preferCurrentTab: true
       } as any);
-      
-      // Mẹo gộp chung màn hình và webcam vào 1 luồng để quay (Sử dụng Canvas hoặc record riêng DisplayMedia tuỳ chiến lược).
-      // Để đơn giản prototype: Record thẳng màn hình (người dùng sẽ chia sẻ toàn màn hình). 
-      // Khuôn mặt (webcam) sẽ luôn nổi trên UI web => nó sẽ được record chung vào DisplayMedia!
-      
-      const combinedStream = new MediaStream([...displayMedia.getVideoTracks()]);
 
-      const recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
-      
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
+      // Nếu user dừng chia sẻ giữa chừng → reset
+      displayMedia.getVideoTracks()[0]?.addEventListener('ended', () => {
+        setIsPrepared(false);
+        setDisplayStream(null);
+      });
 
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        setVideoBlobUrl(url);
-        setVideoBlob(blob);
-        
-        // Tắt tất cả track
-        displayMedia.getTracks().forEach(t => t.stop());
-        userMedia.getTracks().forEach(t => t.stop());
-      };
-
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setIsRecording(true);
-      setIsStarted(true);
+      setDisplayStream(displayMedia);
+      setIsPrepared(true);
       setPermissionError("");
-
     } catch (err) {
       console.error("Không xin được quyền camera/screen:", err);
       setPermissionError("Phải cấp quyền truy cập Camera và Màn hình để thực hiện bài test.");
-      // Fallback nếu từ chối
+    } finally {
+      setIsPreparing(false);
     }
+  };
+
+  // Bước 2 (bệnh nhân): bắt đầu MediaRecorder từ stream đã có
+  const startRecording = () => {
+    if (!displayStream || !webcamStream) {
+      setPermissionError("Mất stream ghi hình. Vui lòng cấp quyền lại.");
+      setIsPrepared(false);
+      return;
+    }
+
+    const combinedStream = new MediaStream([...displayStream.getVideoTracks()]);
+    const recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
+
+    recorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      setVideoBlobUrl(url);
+      setVideoBlob(blob);
+
+      displayStream.getTracks().forEach(t => t.stop());
+      webcamStream.getTracks().forEach(t => t.stop());
+    };
+
+    recorder.start();
+    mediaRecorderRef.current = recorder;
+    setIsRecording(true);
+    setIsStarted(true);
   };
 
   useEffect(() => {
@@ -92,6 +110,14 @@ export default function TestPage() {
       videoRef.current.play().catch(console.error);
     }
   }, [isStarted, webcamStream]);
+
+  // Preview webcam ở màn chấp thuận để bệnh nhân thấy mình trong khung hình
+  useEffect(() => {
+    if (isPrepared && !isStarted && webcamStream && previewVideoRef.current) {
+      previewVideoRef.current.srcObject = webcamStream;
+      previewVideoRef.current.play().catch(console.error);
+    }
+  }, [isPrepared, isStarted, webcamStream]);
 
   useEffect(() => {
     const uploadResult = async () => {
@@ -155,6 +181,7 @@ export default function TestPage() {
   const handleRetake = async () => {
     setIsFinished(false);
     setIsStarted(false);
+    setIsPrepared(false);
     setScore(0);
     setCurrentIndex(0);
     setNumInput("");
@@ -163,6 +190,7 @@ export default function TestPage() {
     setUploadError("");
     setIsRecording(false);
     setWebcamStream(null);
+    setDisplayStream(null);
     chunksRef.current = [];
     mediaRecorderRef.current = null;
     // Fetch bộ câu hỏi mới từ API
@@ -181,34 +209,116 @@ export default function TestPage() {
 
   if (questions.length === 0) return null;
 
+  // Bước nhân viên y tế: cấp quyền ghi hình trước khi đưa máy cho bệnh nhân
+  if (!isPrepared) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-4">
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="glass rounded-3xl p-8 max-w-lg w-full"
+        >
+          <div className="inline-block px-3 py-1 mb-4 mx-auto rounded-full bg-amber-100 text-amber-700 text-xs font-semibold uppercase tracking-wide text-center">
+            Dành cho nhân viên y tế
+          </div>
+          <div className="mb-6 flex justify-center">
+            <div className="w-24 h-24 bg-amber-100 rounded-full flex items-center justify-center">
+              <ScreenShare className="text-amber-600 w-12 h-12" />
+            </div>
+          </div>
+          <h2 className="text-3xl font-bold text-slate-800 mb-3 text-center">Chuẩn bị ghi hình</h2>
+          <p className="text-slate-600 mb-6 leading-relaxed text-center">
+            Bấm nút bên dưới và chọn <span className="font-semibold">Cho phép</span> khi trình duyệt yêu cầu chia sẻ thẻ. Sau đó đưa máy cho người khám đọc cam kết.
+          </p>
+
+          {permissionError && (
+             <p className="text-red-500 text-sm font-medium mb-4 text-center">{permissionError}</p>
+          )}
+
+          <button
+            onClick={prepareStreams}
+            disabled={isPreparing}
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-[0.98] text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-amber-500/30 transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isPreparing ? (
+              <><Loader2 className="animate-spin" size={20} /> Đang chờ cấp quyền...</>
+            ) : (
+              <><ScreenShare size={20} /> Cấp quyền ghi hình</>
+            )}
+          </button>
+
+          <button
+            onClick={() => router.push("/")}
+            className="w-full mt-3 flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-600 font-medium py-3 px-6 rounded-xl transition-all duration-300"
+          >
+            <Home size={18} />
+            Quay về trang chủ
+          </button>
+        </motion.div>
+      </main>
+    );
+  }
+
+  // Bước bệnh nhân: đọc cam kết và xác nhận (popup quyền đã xong)
   if (!isStarted) {
     return (
       <main className="min-h-screen flex items-center justify-center p-4">
-        <motion.div 
+        <motion.div
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="glass rounded-3xl p-8 max-w-lg w-full text-center"
+          className="glass rounded-3xl p-8 max-w-lg w-full"
         >
           <div className="mb-6 flex justify-center">
-            <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center">
-              <VideoOff className="text-blue-500 w-12 h-12" />
+            <div className="relative w-32 h-32 rounded-2xl overflow-hidden bg-black shadow-lg border-4 border-white">
+              <video
+                ref={previewVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+                style={{ transform: "scaleX(-1)" }}
+              />
+              <div className="absolute bottom-1 left-1 flex items-center gap-1.5">
+                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                <span className="text-[10px] font-semibold text-white drop-shadow">SẴN SÀNG</span>
+              </div>
             </div>
           </div>
-          <h2 className="text-3xl font-bold text-slate-800 mb-4">Chuẩn Bị Kiểm Tra</h2>
-          <p className="text-slate-600 mb-6 leading-relaxed">
-            Hệ thống yêu cầu ghi hình màn hình và camera trong suốt quá trình làm bài để đảm bảo minh bạch.
-            Vui lòng nhấn nút bên dưới và cấp quyền truy cập thiết bị.
+          <h2 className="text-3xl font-bold text-slate-800 mb-3 text-center">Chấp thuận Ghi hình Y tế</h2>
+          <p className="text-slate-600 mb-6 leading-relaxed text-center">
+            Để đảm bảo tính minh bạch và xác thực đúng người khám, bài test này sẽ được ghi hình lại.
           </p>
-          
+
+          <ul className="space-y-3 mb-6 bg-slate-50/70 border border-slate-200 rounded-2xl p-5">
+            <li className="flex gap-3">
+              <CheckCircle className="text-emerald-500 flex-shrink-0 mt-0.5" size={20} />
+              <span className="text-slate-700 text-sm leading-relaxed">
+                Tôi đồng ý để hệ thống quay lại khuôn mặt trong suốt quá trình làm bài test mù màu.
+              </span>
+            </li>
+            <li className="flex gap-3">
+              <CheckCircle className="text-emerald-500 flex-shrink-0 mt-0.5" size={20} />
+              <span className="text-slate-700 text-sm leading-relaxed">
+                Video này chỉ được sử dụng cho mục đích xác thực danh tính lái xe và lưu trữ hồ sơ y tế theo Nghị định 13/2023/NĐ-CP.
+              </span>
+            </li>
+            <li className="flex gap-3">
+              <CheckCircle className="text-emerald-500 flex-shrink-0 mt-0.5" size={20} />
+              <span className="text-slate-700 text-sm leading-relaxed">
+                Tôi cam kết không đeo khẩu trang, kính râm khi thực hiện bài test này.
+              </span>
+            </li>
+          </ul>
+
           {permissionError && (
-             <p className="text-red-500 text-sm font-medium mb-4">{permissionError}</p>
+             <p className="text-red-500 text-sm font-medium mb-4 text-center">{permissionError}</p>
           )}
 
-          <button 
+          <button
             onClick={startRecording}
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 active:scale-[0.98] text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-300"
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 active:scale-[0.98] text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-emerald-500/30 transition-all duration-300 uppercase tracking-wide"
           >
-            Bắt đầu và Cho phép ghi hình
+            Tôi đồng ý &amp; Bắt đầu làm bài test
           </button>
 
           <button
@@ -405,15 +515,14 @@ export default function TestPage() {
               ))}
             </div>
 
-            {/* Nút Xác nhận số */}
-            {numInput && (
-              <button
-                onClick={() => handleAnswer(numInput)}
-                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-500/20 transition-all duration-200 active:scale-[0.98] text-lg"
-              >
-                Xác nhận: &ldquo;{numInput}&rdquo;
-              </button>
-            )}
+            {/* Nút Xác nhận số - luôn render để giữ layout ổn định */}
+            <button
+              onClick={() => handleAnswer(numInput)}
+              disabled={!numInput}
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-500/20 transition-all duration-200 active:scale-[0.98] text-lg disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 disabled:hover:from-blue-600 disabled:hover:to-blue-700"
+            >
+              {numInput ? <>Xác nhận: &ldquo;{numInput}&rdquo;</> : 'Xác nhận'}
+            </button>
 
             {/* Nút Không thấy số */}
             <button

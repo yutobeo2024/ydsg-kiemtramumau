@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSession, ADMIN_COOKIE } from '@/lib/session';
 
-// Credentials stored SERVER-SIDE ONLY — never bundled into client JS
-const ADMIN_USERNAME = 'admin';
-const ADMIN_PASSWORD = '310516';
+// Credentials stored SERVER-SIDE ONLY — never bundled into client JS.
+// Override qua env trên VPS production.
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '310516';
 
 export async function POST(req: Request) {
   try {
