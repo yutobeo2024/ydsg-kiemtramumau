@@ -27,7 +27,10 @@ export async function POST(req: Request) {
     const uploadDir = process.env.VIDEO_DIR || path.join(process.cwd(), 'public', 'uploads', 'videos');
     await fs.mkdir(uploadDir, { recursive: true });
 
-    const safeFilename = `${ticketId.replace(/[\/\\:*?"<>|]/g, '_')}-${Date.now()}.webm`;
+    // Chỉ giữ A-Z a-z 0-9 _ -. Các ký tự khác (khoảng trắng, dấu phẩy, unicode...) → '_'
+    // để filename match regex của /api/videos/[filename] khi serve lại.
+    const safeId = ticketId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80) || 'video';
+    const safeFilename = `${safeId}-${Date.now()}.webm`;
     const filePath = path.join(uploadDir, safeFilename);
 
     await fs.writeFile(filePath, buffer);
